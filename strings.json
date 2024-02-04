@@ -1,0 +1,18 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "ip_address": "IP adresa zařízení"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Nelze připojit!",
+      "unknown": "Neznámá chyba!"
+    },
+    "abort": {
+      "already_configured": "Zařízení s touto IP již existuje"
+    }
+  }
+}

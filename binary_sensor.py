@@ -1,154 +1,232 @@
-"""Platform for binary sensor integration."""
-# This file shows the setup for the binary sensors associated with the Monitor device.
-# They are setup in the same way with the call to the async_setup_entry function
-# via HA from the module __init__. Each binary sensor has a device_class, this tells HA how
-# to display it in the UI (for know types).
-
 from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
     BinarySensorDeviceClass,
 )
 
-from .const import DOMAIN
+from homeassistant.helpers.update_coordinator import (
+    CoordinatorEntity,
+)
+
+from homeassistant.core import (
+    callback,
+)
+
+from .const import (
+    DOMAIN,
+    DATA,
+    MONITOR,
+)
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    """Add sensors for passed config_entry in HA."""
-    hp = hass.data[DOMAIN][config_entry.entry_id].hp
+    """
+    Přidá binární senzory pro daný config_entry v Home Assistant.
+    
+    Tato funkce inicializuje nové entity binárních senzorů založené na datech získaných
+    z konfiguračního záznamu a přidá je do Home Assistant. Každý senzor je spojen s
+    konkrétní funkcionalitou nebo stavem zařízení reprezentovaného třídou HeatPump.
+    
+    Args:
+        hass: Instance HomeAssistant, která poskytuje kontext a metody pro interakci s HA.
+        config_entry: Konfigurační záznam pro tuto integraci, obsahuje konfigurační data.
+        async_add_entities: Funkce callbacku používaná pro přidání nových entit do HA.
+    """
+    # Získání instance koordinátora pro tento config_entry.
+    coordinator = hass.data[DOMAIN][config_entry.entry_id][DATA]
 
     new_entities = []
 
-    new_entities.append(GeneralBinarySensor(hp.devices["monitor"], "Rezim Zima", icon="mdi:snowflake"))
-    new_entities.append(GeneralBinarySensor(hp.devices["monitor"], "Rezim Leto", icon="mdi:weather-sunny"))
+    # Vytvoření instancí binárních senzorů pro různé monitorované funkce a stavy.
+    new_entities.append(
+        GeneralBinarySensor(coordinator, MONITOR, "Rezim Zima", icon="mdi:snowflake")
+    )
+    new_entities.append(
+        GeneralBinarySensor(
+            coordinator, MONITOR, "Rezim Leto", icon="mdi:weather-sunny"
+        )
+    )
 
-    new_entities.append(RunningBinarySensor(hp.devices["monitor"], "Kompresor"))
-    new_entities.append(RunningBinarySensor(hp.devices["monitor"], "Obehove cerpadlo"))
-    new_entities.append(RunningBinarySensor(hp.devices["monitor"], "Ventilator"))
-    new_entities.append(RunningBinarySensor(hp.devices["monitor"], "Elektrokotel 1"))
-    new_entities.append(RunningBinarySensor(hp.devices["monitor"], "Elektrokotel 2"))
-    
-    new_entities.append(ProblemBinarySensor(hp.devices["monitor"], "Alarm"))
-    new_entities.append(ProblemBinarySensor(hp.devices["monitor"], "3 Alarmy"))
-    new_entities.append(GeneralBinarySensor(hp.devices["monitor"], "Reset 3 Alarmu", icon="mdi:restart-alert"))
-    
-    new_entities.append(GeneralBinarySensor(hp.devices["monitor"], "Odtaveni", icon="mdi:snowflake-melt"))
-    new_entities.append(GeneralBinarySensor(hp.devices["monitor"], "Zapnuto", icon="mdi:power"))
+    new_entities.append(RunningBinarySensor(coordinator, MONITOR, "Kompresor"))
+    new_entities.append(RunningBinarySensor(coordinator, MONITOR, "Obehove cerpadlo"))
+    new_entities.append(RunningBinarySensor(coordinator, MONITOR, "Ventilator"))
+    new_entities.append(RunningBinarySensor(coordinator, MONITOR, "Elektrokotel 1"))
+    new_entities.append(RunningBinarySensor(coordinator, MONITOR, "Elektrokotel 2"))
 
+    new_entities.append(ProblemBinarySensor(coordinator, MONITOR, "Alarm"))
+    new_entities.append(ProblemBinarySensor(coordinator, MONITOR, "3 Alarmy"))
+    new_entities.append(
+        GeneralBinarySensor(
+            coordinator, MONITOR, "Reset 3 Alarmu", icon="mdi:restart-alert"
+        )
+    )
+
+    new_entities.append(
+        GeneralBinarySensor(coordinator, MONITOR, "Odtaveni", icon="mdi:snowflake-melt")
+    )
+    new_entities.append(
+        GeneralBinarySensor(coordinator, MONITOR, "Zapnuto", icon="mdi:power")
+    )
+
+    # Přidání vytvořených entit do Home Assistant.
     if new_entities:
         async_add_entities(new_entities)
 
-
-# This base class shows the common properties and methods for a binary sensor.
-class BinarySensorBase(BinarySensorEntity):
-    """Base representation of a Binary Sensor."""
+class BinarySensorBase(CoordinatorEntity, BinarySensorEntity):
+    """Základní třída pro všechny binární senzory v této integraci."""
 
     should_poll = False
 
-    def __init__(self, device):
-        """Initialize the binary sensor."""
-        self._device = device
+    def __init__(self, coordinator, device_type):
+        """Inicializace základní třídy binárního senzoru."""
+        super().__init__(coordinator)
+        self._device_type = device_type
+        self._device = self.coordinator.hp.devices[device_type]
 
-    # To link this entity to the cover device, this property must return an
-    # identifiers value matching that used in the cover, but no other information such
-    # as name. If name is returned, this entity will then also become a device in the
-    # HA UI.
     @property
     def device_info(self):
-        """Return information to link this entity with the correct device."""
-        return {"identifiers": {(DOMAIN, self._device._id)}}
+        """Vrátí informace o zařízení pro integraci s Home Assistant."""
+        return {"identifiers": {(DOMAIN, self._device.id)}}
 
-    # This property is important to let HA know if this entity is online or not.
-    # If an entity is offline (return False), the UI will refelect this.
     @property
     def available(self) -> bool:
-        """Return True if device is available."""
+        """Vrátí dostupnost senzoru."""
         return self._device.get_availability()
 
-    async def async_added_to_hass(self):
-        """Run when this Entity has been added to HA."""
-        # Sensors should also register callbacks to HA when their state changes
-        self._device.register_callback(self.async_write_ha_state)
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Zpracování aktualizace od koordinátora."""
+        self._device = self.coordinator.hp.devices[self._device_type]
+        self.async_write_ha_state()
 
-    async def async_will_remove_from_hass(self):
-        """Entity being removed from hass."""
-        # The opposite of async_added_to_hass. Remove any registered call backs here.
-        self._device.remove_callback(self.async_write_ha_state)
-
-
+# Třídy pro specifické typy binárních senzorů (RunningBinarySensor, ProblemBinarySensor, GeneralBinarySensor)
+# jsou odvozeny od BinarySensorBase a implementují specifické chování pro každý typ senzoru, včetně
+# vlastnosti is_on, která určuje, zda je senzor ve stavu on/off, a vlastnosti icon pro určení ikony senzoru.
 class RunningBinarySensor(BinarySensorBase):
-    """Representation of a Binary Sensor."""
+    """Running třída pro binární senzory v této integraci."""
+    
     device_class = BinarySensorDeviceClass.RUNNING
 
-    def __init__(self, device, name, icon=None):
-        """Initialize the sensor."""
-        super().__init__(device)
+    def __init__(self, coordinator, device_type, name, icon=None):
+        """
+        Inicializuje instance RunningBinarySensor.
+        
+        Args:
+            coordinator: Instance koordinátora, který spravuje aktualizace dat.
+            device_type: Typ zařízení, ke kterému senzor patří.
+            name: Lidsky čitelný název senzoru.
+            icon: Volitelná ikona pro senzor.
+        """
+        super().__init__(coordinator, device_type)
 
-        self._id = name.replace(" ","_").casefold()
+        self._id = name.replace(" ", "_").casefold()
         self._attr_name = name
-        self._attr_unique_id = self._device._id + "_" + self._id
-        self.entity_id = "binary_sensor." + self._device._id + "_" + self._id
+        self._attr_unique_id = self._device.id + "_" + self._id
+        self.entity_id = "binary_sensor." + self._device.id + "_" + self._id
 
         self._icon = icon
 
     @property
     def is_on(self):
-        """Return the state of the sensor."""
+        """
+        Určuje, zda je zařízení v provozu.
+        
+        Returns:
+            True, pokud je zařízení v provozu, jinak False.
+        """
         return self._device.get_state(self._id)
 
     @property
     def icon(self):
-        """Return the icon of the binary sensor."""
+        """
+        Vrátí ikonu senzoru.
+        
+        Returns:
+            Řetězec určující ikonu pro senzor.
+        """
         return self._icon
 
+
 class ProblemBinarySensor(BinarySensorBase):
-    """Representation of a Binary Sensor."""
+    """Problem třída pro binární senzory v této integraci."""
+
     device_class = BinarySensorDeviceClass.PROBLEM
 
-    def __init__(self, device, name, icon=None):
-        """Initialize the sensor."""
-        super().__init__(device)
+    def __init__(self, coordinator, device_type, name, icon=None):
+        """
+        Inicializuje instance ProblemBinarySensor.
         
-        self._id = name.replace(" ","_").casefold()
+        Args:
+            coordinator: Instance koordinátora, který spravuje aktualizace dat.
+            device_type: Typ zařízení, ke kterému senzor patří.
+            name: Lidsky čitelný název senzoru.
+            icon: Volitelná ikona pro senzor.
+        """
+        super().__init__(coordinator, device_type)
+
+        self._id = name.replace(" ", "_").casefold()
         self._attr_name = name
-        self._attr_unique_id = self._device._id + "_" + self._id
-        self.entity_id = "binary_sensor." + self._device._id + "_" + self._id
+        self._attr_unique_id = self._device.id + "_" + self._id
+        self.entity_id = "binary_sensor." + self._device.id + "_" + self._id
 
         self._icon = icon
 
     @property
     def is_on(self):
-        """Return the state of the sensor."""
+        """
+        Určuje, zda je zařízení v provozu.
+        
+        Returns:
+            True, pokud je zařízení v provozu, jinak False.
+        """
         return self._device.get_state(self._id)
-    
+
     @property
     def icon(self):
-        """Return the icon of the sensor."""
+        """
+        Vrátí ikonu senzoru.
+        
+        Returns:
+            Řetězec určující ikonu pro senzor.
+        """
         return self._icon
 
 class GeneralBinarySensor(BinarySensorBase):
-    """Representation of a Binary Sensor."""
+    """Obecná třída pro binární senzory v této integraci."""
 
-    def __init__(self, device, name, icon=None):
-        """Initialize the sensor."""
-        super().__init__(device)
+    def __init__(self, coordinator, device_type, name, icon=None):
+        """
+        Inicializuje instance GeneralBinarySensor.
+        
+        Args:
+            coordinator: Instance koordinátora, který spravuje aktualizace dat.
+            device_type: Typ zařízení, ke kterému senzor patří.
+            name: Lidsky čitelný název senzoru.
+            icon: Volitelná ikona pro senzor.
+        """
+        super().__init__(coordinator, device_type)
 
-        self._id = name.replace(" ","_").casefold()
+        self._id = name.replace(" ", "_").casefold()
         self._attr_name = name
-        self._attr_unique_id = self._device._id + "_" + self._id
-        self.entity_id = "binary_sensor." + self._device._id + "_" + self._id
+        self._attr_unique_id = self._device.id + "_" + self._id
+        self.entity_id = "binary_sensor." + self._device.id + "_" + self._id
 
         self._icon = icon
 
     @property
     def is_on(self):
-        """Return the state of the sensor."""
+        """
+        Určuje, zda je zařízení v provozu.
+        
+        Returns:
+            True, pokud je zařízení v provozu, jinak False.
+        """
         return self._device.get_state(self._id)
-    
+
     @property
     def icon(self):
-        """Return the icon of the sensor."""
+        """
+        Vrátí ikonu senzoru.
+        
+        Returns:
+            Řetězec určující ikonu pro senzor.
+        """
         return self._icon
-
-
-
-
-
